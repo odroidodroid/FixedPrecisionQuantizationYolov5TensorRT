@@ -336,3 +336,22 @@ if __name__ == '__main__':
 
     else:  # report fused model summary
         model.fuse()
+
+
+ROOT = '/home/youngjin/projects/FixedPrecisionQuantizationYolov5TensorRT/PTQ/'
+
+
+
+def yolov5_fp16(weights='yolov5l.pt', device=torch.device('cuda'), dnn=False, data=ROOT + '../dataset/coco.yaml', fp16=True) :
+
+    return DetectMultiBackend(weights, device, dnn, data, fp16)
+
+
+def yolov5_fp32(weights='yolov5l.pt', device=torch.device('cuda'), dnn=False, data=ROOT + '../dataset/coco.yaml', fp16=False) :
+
+    return DetectMultiBackend(weights, device, dnn, data, fp16)
+
+
+def yolov5_int8(weights='yolov5l.pt', device=torch.device('cuda'), dnn=False, data=ROOT + '../dataset/coco.yaml', fp16=False) :
+
+    return DetectMultiBackend(weights, device, dnn, data, fp16)

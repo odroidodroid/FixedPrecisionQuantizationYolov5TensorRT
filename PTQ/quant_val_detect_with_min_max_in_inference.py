@@ -139,15 +139,15 @@ def run(
         single_cls=False,  # treat as single-class dataset
         augment=False,  # augmented inference
         verbose=False,  # verbose output
-        save_txt=True,  # save results to *.txt
-        save_img=True,
+        save_txt=False,  # save results to *.txt
+        save_img=False,
         save_hybrid=False,  # save label+prediction hybrid results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
-        save_json=True,  # save a COCO-JSON results file
+        save_json=False,  # save a COCO-JSON results file
         project=ROOT / '../../runs/quant_val_detect',  # save to project/name
         name='exp',  # save to project/name
         exist_ok=False,  # existing project/name ok, do not increment
-        half=False,  # use FP16 half-precision inference
+        half=True,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         model=None,
         save_dir=Path(''),
@@ -399,15 +399,15 @@ def parse_opt():
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--verbose', action='store_true', help='report mAP by class')
-    parser.add_argument('--save-txt', default=True, help='save results to *.txt')
-    parser.add_argument('--save-img', default=True)
+    parser.add_argument('--save-txt', default=False, help='save results to *.txt')
+    parser.add_argument('--save-img', default=False)
     parser.add_argument('--save-hybrid', default=False, help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', default=False, help='save a COCO-JSON results file')
     parser.add_argument('--project', default=ROOT / '../../runs/quant_val_detect', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    parser.add_argument('--half', default=False, help='use FP16 half-precision inference')
+    parser.add_argument('--half', default=True, help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
     parser.add_argument('--bit_width',default=8)
     parser.add_argument('--mode',default='symmetric')
