@@ -19,7 +19,6 @@ Usage - formats:
 """
 
 import argparse
-from gc import collect
 import json
 import os
 import sys
@@ -29,6 +28,7 @@ from threading import Thread
 import numpy as np
 import torch
 from tqdm import tqdm
+from models.yolo import Detect_after_trt
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -37,19 +37,22 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
+#from models.yolo import Model
 from utils.callbacks import Callbacks
 from utils.datasets import *
 from utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, check_yaml,
                            coco80_to_coco91_class, colorstr, increment_path, non_max_suppression, print_args,
-                           scale_coords, xywh2xyxy, xyxy2xywh, xywh2xyxy_custom,xywh2xyxy_custom2,coco91_to_coco80_class)
+                           scale_coords, xywh2xyxy, xyxy2xywh, xywh2xyxy_custom,xywh2xyxy_custom2,coco91_to_coco80_class,
+                           non_max_suppression_np)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.plots import *
 from utils.torch_utils import select_device, time_sync
-from utils.quant_utils.new_quant_module import *
-from utils.quant_utils.new_quant_utils import *
-from new_prepare_model import *
+from utils.quant_utils.quant_module import *
+from utils.quant_utils.quant_utils import *
+from prepare_model import *
 from utils.quant_utils.calibration_method import *
+from torch2trt import torch2trt
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -87,75 +90,12 @@ def save_one_json(predn, jdict, path, class_map):
             'score': round(p[4], 5)})
     
 
-# def compute_axis_max(model, **kwargs):
-#     # Load calib result
-#     for name, module in model.named_modules():
-#         if isinstance(module, QuantConv2d):
-#             if module.calibrator is not None:
-#                 if isinstance(module.calibrator, MaxCalibrator):
-#                     module.load_calib_axis_max()
-#                 else:
-#                     module.load_calib_axis_max(**kwargs)
-#             print(F"{name:40}: {module}")
-#     model.cuda()
+def update(model, dataset):
+    img = torch.load('PTQ_yolov5_distill_500.pth')[0]['img']
 
+    im0 = img[0].cuda()
 
-# def collect_model_stats(model, data_loader, num_batches):
-#     """Feed data to the network and collect statistics"""
-#     # Enable calibrators
-#     for name, module in model.named_modules():
-#         if isinstance(module, QuantConv2d):
-#             if module.calibrator is not None:
-#                 module.disable_quant()
-#                 module.enable_calib()
-#     # Feed data to the network for collecting stats
-#     for i, (image, _, _, _, _, _) in tqdm(enumerate(data_loader), total=num_batches):
-#         image = torch.from_numpy(image).cuda()
-#         image = image.float()
-#         image = image.view(1, image.shape[0], image.shape[1], image.shape[2])
-#         model(image)
-#         if i >= num_batches:
-#             break
-
-#     # Disable calibrators
-#     for name, module in model.named_modules():
-#         if isinstance(module, QuantConv2d):
-#             if module.calibrator is not None:
-#                 module.enable_quant()
-#                 module.disable_calib()
-
-# def calibrate_model(model, dataset, num_calib_batch, calibrator, hist_percentile, out_dir):
-
-#     model_name = 'yolov5'
-#     print("Calibrating model...\n") 
-
-#     with torch.no_grad() :
-#         collect_model_stats(model, dataset, num_calib_batch)
-
-#     if not calibrator == 'histogram' :
-#         print("max calibration")
-#         compute_axis_max(model, method='max')
-#         calib_output = os.path.join(out_dir,
-#         F"{model_name}-max-{num_calib_batch}.pth")
-#         torch.save(model.state_dict(), calib_output)
-#     else :
-#         for percentile in hist_percentile : 
-#             print("percentile calibration")
-#             compute_axis_max(model, method="percentile")
-#             calib_output = os.path.join(out_dir,
-#             F"{model_name}-percentile-{percentile}-{num_calib_batch}.pth")
-#             torch.save(model.state_dict(), calib_output)
-
-#         for method in ["mse", "entropy"] :
-#             print(F"{method} calibration")
-#             compute_axis_max(model, method=method)
-#             calib_output = os.path.join(out_dir, 
-#             F"{model_name}-{method}-{percentile}-{num_calib_batch}.pth")
-#             torch.save(model.state_dict(), calib_output)
-
-# #    _ = model()
-
-
+    _ = model(im0)
 
 
 
@@ -189,9 +129,10 @@ def run(
         weights= ROOT / '../checkpoints/yolov5l.pt',  # model.pt path(s)
         source='/home/youngjin/datasets/coco/val',
         hyp='',
+        resize=True,
         evaluate=True,
         batch_size=1,  # batch size
-        imgsz=640,  # inference size (pixels)
+        imgsz=(640,640),  # inference size (pixels)
         classes=None,  # filter by class: --class 0, or --class 0 2 3
         task='val',
         agnostic_nms=False,  # class-agnostic NMS
@@ -203,8 +144,8 @@ def run(
         single_cls=False,  # treat as single-class dataset
         augment=False,  # augmented inference
         verbose=False,  # verbose output
-        save_txt=True,  # save results to *.txt
-        save_img=True,
+        save_txt=False,  # save results to *.txt
+        save_img=False,
         save_hybrid=False,  # save label+prediction hybrid results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
         save_json=True,  # save a COCO-JSON results file
@@ -221,10 +162,6 @@ def run(
         bit_width=8,
         mode='symmetric',
         quantized_weight_save_path='',
-        calibration_method='',
-        num_calib_batch=0,
-        hist_percentile=0.0,
-        out_dir='',
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -240,29 +177,51 @@ def run(
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
         (save_dir / 'images' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+
+
+
         # Load model
-        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half).to('cuda')
+        model = model.type(torch.float32)
+        model = model.eval()
+
+        # create inputs for conversion
+        #inputs_conversion = (torch.zeros(size=(1, 3, 640, 640), dtype=torch.float32).cuda(), )
+        inputs_conversion = []
+        input_shapes = ((1, 3, 640, 640), (1, 3, 480, 640), (1, 3, 640, 448), (1, 3, 384, 640), (1, 3, 448, 640), (1, 3, 640, 480))
+        for in_sh in input_shapes :
+            inputs_conversion.append(torch.ones(size=in_sh, dtype=torch.float32).cuda())
+
+        print('start tensorrt conversion...')
+
+        model_trt = torch2trt(model, inputs=[inputs_conversion[0]])
+
+        print('complete conversion...')
 
         stride, pt, jit, engine = model.stride, model.pt, False, False
         imgsz = check_img_size(imgsz, s=stride)  # check image size
         half = model.fp16  # FP16 supported on limited backends with CUDA
         gs = max(int(model.stride), 32)  # grid size (max stride)
 
-        data_loader, dataset = create_dataloader_custom(image_path=source+'/images',
+        dataset = create_dataloader_custom(image_path=source+'/images',
                                                         label_path=source+'/labels',
                                                         imgsz=imgsz,
                                                         batch_size=1,
                                                         stride=stride,
-                                                        workers=workers)
+                                                        workers=workers, 
+                                                        resize=resize)
 
 
-        # Update data
-        #calibrate_model(model, dataset, num_calib_batch, calibration_method, hist_percentile, out_dir)
+        # Distill data
+        #update(model, dataset)
         #freeze_model(model)
+        #print('model updated and froze')
 
         # Quantize model
-        model = prepare_model(model, bit_width, mode, quantized_weight_save_path, calibration_method, axis=0, unsigned=False)
-        print(model)
+        print('quantize model...')
+        model = prepare_model(model, bit_width, mode, quantized_weight_save_path)
+        print('complete quantization...')
+        #print(model)
 
 
         if engine:
@@ -295,7 +254,7 @@ def run(
 
     pbar = tqdm(dataset)
     eps = 1e-16
-
+    print('start inference...')
     for batch_i, (img, im0, targets, paths, shapes, img_id) in enumerate(pbar) :
         t1 = time_sync()
         callbacks.run('on_val_batch_start')
@@ -304,7 +263,7 @@ def run(
             targets = torch.from_numpy(targets).to(device)
         paths = source + '/images/' + img_id + '.jpg'
         img = img.view(1, img.shape[0], img.shape[1],img.shape[2])
-        #targets = torch.from_numpy(targets).to(device)
+            #targets = torch.from_numpy(targets).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         nb, _, height, width = img.shape  # batch size, channels, height, width
@@ -312,16 +271,15 @@ def run(
         dt[0] += t2 - t1
 
         # Inference
-        out = model(img, augment=augment)  # inference, loss outputs
+        #out = model(img, augment=augment)  # inference, loss outputs
+        out = model_trt(img)
+
         dt[1] += time_sync() - t2
-
-        # Loss
-        #if compute_loss:
-        #    loss += compute_loss([x.float() for x in train_out], targets)[1]  # box, obj, cls
-
         # NMS
         t3 = time_sync()
-        out = non_max_suppression(out, conf_thres, iou_thres, classes, agnostic_nms, max_det)
+        #out = non_max_suppression(out, conf_thres, iou_thres, classes, agnostic_nms, max_det)
+        out = out.cpu().detach().numpy()[-1].reshape((1, -1, nc + 5))
+        out = non_max_suppression_np(out, conf_thres, iou_thres, classes, agnostic_nms)
         dt[2] += time_sync() - t3
         seen += 1
 
@@ -370,23 +328,25 @@ def run(
             Thread(target=plot_images, args=(im0, output_to_target(out), paths, f, names), daemon=True).start()
 
         callbacks.run('on_val_batch_end')
-
+    
+    print('end inference...')
 
 
     # Compute metric
-    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
-    tp, conf, pred_cls, target_cls = stats
+    if evaluate :
+        stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
+        tp, conf, pred_cls, target_cls = stats
 
-    # i = np.argsort(-conf.cpu().detach().numpy())
-    # tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-    n_l = target_cls.shape[0]
-    fpc = (1-tp).cumsum()[-1]
-    tpc = tp.cumsum()[-1]
+        # i = np.argsort(-conf.cpu().detach().numpy())
+        # tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+        n_l = target_cls.shape[0]
+        fpc = (1-tp).cumsum()[-1]
+        tpc = tp.cumsum()[-1]
 
-    recall = tpc / (n_l + eps)
-    precision = tpc / (tpc + fpc)
+        recall = tpc / (n_l + eps)
+        precision = tpc / (tpc + fpc)
 
-    print('cumsum recall : {}, precision : {}'.format(recall, precision))
+        print('cumsum recall : {}, precision : {}'.format(recall, precision))
 
 
 
@@ -452,9 +412,10 @@ def parse_opt():
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5l.pt', help='model.pt path(s)')
     parser.add_argument('--source', default='/home/youngjin/datasets/coco/val')
     parser.add_argument('--hyp', default='../dataset/hyps/hyp.scratch-low.yaml')
-    parser.add_argument('--evaluate', default=True)
+    parser.add_argument('--evaluate', default=False)
+    parser.add_argument('--resize', default=True)
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+',type=int, default=[640], help='inference size (pixels)')
+    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+',type=int, default=(640,640), help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
@@ -466,8 +427,8 @@ def parse_opt():
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--verbose', action='store_true', help='report mAP by class')
-    parser.add_argument('--save-txt', default=True, help='save results to *.txt')
-    parser.add_argument('--save-img', default=True)
+    parser.add_argument('--save-txt', default=False, help='save results to *.txt')
+    parser.add_argument('--save-img', default=False)
     parser.add_argument('--save-hybrid', default=False, help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', default=False, help='save a COCO-JSON results file')
@@ -479,10 +440,6 @@ def parse_opt():
     parser.add_argument('--bit_width',default=8)
     parser.add_argument('--mode',default='symmetric')
     parser.add_argument('--quantized_weight_save_path', default='')
-    parser.add_argument('--calibration_method', default='max')
-    parser.add_argument('--num_calib_batch', default=500)
-    parser.add_argument('--hist_percentile', default=[99.9, 99.99, 99.999, 99.9999])
-    parser.add_argument('--out_dir', default=ROOT/'../../stats')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.data = check_yaml(opt.data)  # check YAML

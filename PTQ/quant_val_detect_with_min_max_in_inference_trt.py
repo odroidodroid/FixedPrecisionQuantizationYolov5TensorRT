@@ -28,6 +28,7 @@ from threading import Thread
 import numpy as np
 import torch
 from tqdm import tqdm
+from models.yolo import Detect_after_trt
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -36,6 +37,7 @@ if str(ROOT) not in sys.path:
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.common import DetectMultiBackend
+#from models.yolo import Model
 from utils.callbacks import Callbacks
 from utils.datasets import *
 from utils.general import (LOGGER, check_dataset, check_img_size, check_requirements, check_yaml,
@@ -49,6 +51,7 @@ from utils.quant_utils.quant_module import *
 from utils.quant_utils.quant_utils import *
 from prepare_model import *
 from utils.quant_utils.calibration_method import *
+from torch2trt import torch2trt
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -125,7 +128,6 @@ def run(
         weights= ROOT / '../checkpoints/yolov5l.pt',  # model.pt path(s)
         source='/home/youngjin/datasets/coco/val',
         hyp='',
-        resize=False,
         evaluate=True,
         batch_size=1,  # batch size
         imgsz=640,  # inference size (pixels)
@@ -144,11 +146,11 @@ def run(
         save_img=False,
         save_hybrid=False,  # save label+prediction hybrid results to *.txt
         save_conf=False,  # save confidences in --save-txt labels
-        save_json=False,  # save a COCO-JSON results file
+        save_json=True,  # save a COCO-JSON results file
         project=ROOT / '../../runs/quant_val_detect',  # save to project/name
         name='exp',  # save to project/name
         exist_ok=False,  # existing project/name ok, do not increment
-        half=True,  # use FP16 half-precision inference
+        half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         model=None,
         save_dir=Path(''),
@@ -173,8 +175,24 @@ def run(
         (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
         (save_dir / 'images' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
+
+
+
         # Load model
-        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+        model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half).to('cuda')
+        model = model.type(torch.float32)
+        model = model.eval()
+
+        # create inputs for conversion
+        #inputs_conversion = (torch.zeros(size=(1, 3, 640, 640), dtype=torch.float32).cuda(), )
+        inputs_conversion = []
+        input_shapes = ((1, 3, 640, 640), (1, 3, 480, 640), (1, 3, 640, 448), (1, 3, 384, 640), (1, 3, 448, 640), (1, 3, 640, 480))
+        for in_sh in input_shapes :
+            inputs_conversion.append(torch.ones(size=in_sh, dtype=torch.float32).cuda())
+
+        model_trt = torch2trt(model, inputs=[inputs_conversion[0]])
+
+
 
         stride, pt, jit, engine = model.stride, model.pt, False, False
         imgsz = check_img_size(imgsz, s=stride)  # check image size
@@ -183,7 +201,6 @@ def run(
 
         dataset = create_dataloader_custom(image_path=source+'/images',
                                                         label_path=source+'/labels',
-                                                        imgsz=imgsz,
                                                         batch_size=1,
                                                         stride=stride,
                                                         workers=workers,
@@ -196,8 +213,8 @@ def run(
         #print('model updated and froze')
 
         # Quantize model
-        model = prepare_model(model, bit_width, mode, quantized_weight_save_path)
-        print(model)
+        #model = prepare_model(model, bit_width, mode, quantized_weight_save_path)
+        #print(model)
 
 
         if engine:
@@ -248,6 +265,9 @@ def run(
 
         # Inference
         out = model(img, augment=augment)  # inference, loss outputs
+
+        out= model_trt(img)
+
         dt[1] += time_sync() - t2
 
         # Loss
@@ -414,7 +434,6 @@ def parse_opt():
     parser.add_argument('--bit_width',default=8)
     parser.add_argument('--mode',default='symmetric')
     parser.add_argument('--quantized_weight_save_path', default='')
-    parser.add_argument('--resize', default=False)
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.data = check_yaml(opt.data)  # check YAML

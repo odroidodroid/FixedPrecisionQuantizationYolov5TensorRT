@@ -128,7 +128,8 @@ def run(
         weights= ROOT / '../checkpoints/yolov5l.pt',  # model.pt path(s)
         source='/home/youngjin/datasets/coco/val',
         hyp='',
-        evaluate=True,
+        resize=False,
+        evaluate=False,
         batch_size=1,  # batch size
         imgsz=640,  # inference size (pixels)
         classes=None,  # filter by class: --class 0, or --class 0 2 3
@@ -182,12 +183,13 @@ def run(
         gs = max(int(model.stride), 32)  # grid size (max stride)
 
 
-        data_loader, dataset = create_dataloader_custom(image_path=source+'/images',
+        dataset = create_dataloader_custom(image_path=source+'/images',
                                                         label_path=source+'/labels',
-                                                        imgsz=imgsz,
                                                         batch_size=1,
+                                                        imgsz=imgsz,
                                                         stride=stride,
-                                                        workers=workers)
+                                                        workers=workers,
+                                                        resize=resize)
 
 
 
@@ -307,20 +309,21 @@ def run(
 
         callbacks.run('on_val_batch_end')
 
-    # Compute metric
-    stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
-    tp, conf, pred_cls, target_cls = stats
+    if evaluate :
+        # Compute metric
+        stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
+        tp, conf, pred_cls, target_cls = stats
 
-    # i = np.argsort(-conf.cpu().detach().numpy())
-    # tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
-    n_l = target_cls.shape[0]
-    fpc = (1-tp).cumsum()[-1]
-    tpc = tp.cumsum()[-1]
+        # i = np.argsort(-conf.cpu().detach().numpy())
+        # tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
+        n_l = target_cls.shape[0]
+        fpc = (1-tp).cumsum()[-1]
+        tpc = tp.cumsum()[-1]
 
-    recall = tpc / (n_l + eps)
-    precision = tpc / (tpc + fpc)
+        recall = tpc / (n_l + eps)
+        precision = tpc / (tpc + fpc)
 
-    print('cumsum recall : {}, precision : {}'.format(recall, precision))
+        print('cumsum recall : {}, precision : {}'.format(recall, precision))
 
 
     # # Compute metrics
@@ -386,12 +389,13 @@ def parse_opt():
     parser.add_argument('--source', default='/home/youngjin/datasets/coco/val')
     parser.add_argument('--hyp', default='../dataset/hyps/hyp.scratch-low.yaml')
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
-    parser.add_argument('--evaluate', default=True)
+    parser.add_argument('--evaluate', default=False)
+    parser.add_argument('--resize', default=False)
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+',type=int, default=[640], help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
-    parser.add_argument('--device', default='0,1', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--single-cls', action='store_true', help='treat as single-class dataset')
     parser.add_argument('--augment', default=False, help='augmented inference')
@@ -399,8 +403,8 @@ def parse_opt():
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--verbose', action='store_true', help='report mAP by class')
-    parser.add_argument('--save-txt', default=True, help='save results to *.txt')
-    parser.add_argument('--save-img', default=True)
+    parser.add_argument('--save-txt', default=False, help='save results to *.txt')
+    parser.add_argument('--save-img', default=False)
     parser.add_argument('--save-hybrid', default=False, help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', default=False, help='save a COCO-JSON results file')

@@ -10,7 +10,8 @@ import torch.nn as nn
 
 from models.common import Conv
 from utils.downloads import attempt_download
-
+from copy import deepcopy
+import yaml
 
 class CrossConv(nn.Module):
     # Cross Convolution Downsample
@@ -91,12 +92,14 @@ def attempt_load(weights, map_location=None, inplace=True, fuse=True):
     from models.yolo import Detect, Model
 
     # Loads an ensemble of models weights=[a,b,c] or a single model weights=[a] or weights=a
+    #model = Model('PTQ/models/yolov5l.yaml')
     model = Ensemble()
     for w in weights if isinstance(weights, list) else [weights]:
         ckpt = torch.load(attempt_download(w), map_location=map_location)  # load
         ckpt = (ckpt.get('ema') or ckpt['model']).float()  # FP32 model
-        model.append(ckpt.fuse().eval() if fuse else ckpt.eval())  # fused or un-fused model in eval mode
-
+        
+        #model.append(ckpt.fuse().eval() if fuse else ckpt.eval())  # fused or un-fused model in eval mode
+        model = ckpt.fuse().eval() if fuse else ckpt.eval()
     # Compatibility updates
     for m in model.modules():
         t = type(m)
@@ -104,19 +107,72 @@ def attempt_load(weights, map_location=None, inplace=True, fuse=True):
             m.inplace = inplace  # torch 1.7.0 compatibility
             if t is Detect:
                 if not isinstance(m.anchor_grid, list):  # new Detect Layer compatibility
-                    delattr(m, 'anchor_grid')
-                    setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
+                   delattr(m, 'anchor_grid')
+                   setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
         elif t is Conv:
             m._non_persistent_buffers_set = set()  # torch 1.6.0 compatibility
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
 
-    if len(model) == 1:
-        return model[-1]  # return model
-    else:
-        print(f'Ensemble created with {weights}\n')
-        for k in 'names', 'nc', 'yaml':
-            setattr(model, k, getattr(model[0], k))
-        model.stride = model[torch.argmax(torch.tensor([m.stride.max() for m in model])).int()].stride  # max stride
-        assert all(model[0].nc == m.nc for m in model), f'Models have different class counts: {[m.nc for m in model]}'
-        return model  # return ensemble
+    return model
+    # if len(model) == 1:
+        #ret_model = model[-1]
+        #return  ret_model # return model
+    # else:
+    #     print(f'Ensemble created with {weights}\n')
+    #     for k in 'names', 'nc', 'yaml':
+    #         setattr(model, k, getattr(model[0], k))
+    #     model.stride = model[torch.argmax(torch.tensor([m.stride.max() for m in model])).int()].stride  # max stride
+    #     assert all(model[0].nc == m.nc for m in model), f'Models have different class counts: {[m.nc for m in model]}'
+    #     return model # return ensemble
+
+
+# def custom_load(data, weights, map_location=None, inplace=True, fuse=True) :
+
+
+#     model = Model(data)
+#     detect = parse_detect()
+
+#     for w in weights if isinstance(weights, list) else [weights] :
+#         ckpt = torch.load(w, map_location=map_location)
+#         ckpt = ckpt['model'].float()
+
+#         model.append(ckpt.fuse().eval() if fuse else ckpt.eval())
+#         detect.append(ckpt.fuse().eval() if fuse else ckpt.eval())
+
+#     for m in model.modules() :
+#         t = type(m) 
+
+#         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Model):
+#             m.inplace = inplace  # torch 1.7.0 compatibility
+#             if t is Detect:
+#                 if not isinstance(m.anchor_grid, list):  # new Detect Layer compatibility
+#                    delattr(m, 'anchor_grid')
+#                    setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
+#         elif t is Conv:
+#             m._non_persistent_buffers_set = set()  # torch 1.6.0 compatibility
+#         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
+#             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
+
+
+#     return model, detect 
+    
+    
+# def parse_detect(yaml_file='PTQ/models/yolov5l.yaml', ch=[3]) :
+#     with open(yaml_file, encoding='ascii', errors='ignore') as f :
+#         cfg = yaml.safe_load(f)
+
+#     anchors, nc, gd, gw = cfg['anchors'], cfg['nc'], cfg['depth_multiple'], cfg['width_multiple']
+#     na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+#     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
+
+#     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
+
+#     for i, (f, n, m, args) in enumerate(cfg['head']) :
+#         m = eval(m) if isinstance(m, str) else m
+#         if m is Detect : 
+#             args.append(ch[x] for x in f) 
+#             if isinstance(args[1], int) :
+#                 args[1] = [list(range(args[1] * 2 ))] * len(f)
+
+#     return m(*args) 

@@ -6,3 +6,31 @@
 |                    torch2trt.tests.torchvision.classification.resnet18 | float16 |        [(1, 3, 224, 224)] | {'fp16_mode': True} | 9.77E-03 | 67.51 | 5.08E-06 | 356 | 1.91e+03 | 3.16 | 2.56 |
 |                    torch2trt.tests.torchvision.classification.resnet34 | float16 |        [(1, 3, 224, 224)] | {'fp16_mode': True} | 2.50E-01 | 66.11 | 3.54E-03 | 244 | 1.14e+03 | 3.95 | 1.98 |
 | torch2trt.tests.torchvision.classification.resnet50 | float16 | [(1, 3, 224, 224)] | {'fp16_mode': True} | N/A | N/A | N/A | N/A | N/A |
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|
+| Name | Data Type | Input Shapes | torch2trt kwargs | Max Error | Throughput (PyTorch) | Throughput (TensorRT) | Latency (PyTorch) | Latency (TensorRT) |
+|------|-----------|--------------|------------------|-----------|----------------------|-----------------------|-------------------|--------------------|

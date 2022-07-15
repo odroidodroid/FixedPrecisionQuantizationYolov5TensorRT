@@ -145,39 +145,27 @@ def create_dataloader(path,
 
 
 def create_dataloader_custom(image_path,
-                      label_path,
                       imgsz,
+                      label_path,
                       batch_size,
                       stride,
                       rank=-1,
                       workers=8,
                       image_weights=False,
                       quad=False,
-                      shuffle=False):
+                      shuffle=False, 
+                      resize=False):
     # image_path, label_path, imgsz=640, stride=32, auto=True
     with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
         dataset = LoadImagesAndLabels_custom(
-            image_path,
-            label_path,
-            imgsz,
-            stride)
+            image_path=image_path,
+            imgsz=imgsz,
+            label_path=label_path,
+            stride=stride,
+            resize=resize)
 
     batch_size = min(batch_size, len(dataset))
-    nd = torch.cuda.device_count()  # number of CUDA devices
-    nw = min([os.cpu_count() // max(nd, 1), batch_size if batch_size > 1 else 0, workers])  # number of workers
-    sampler = None if rank == -1 else distributed.DistributedSampler(dataset, shuffle=shuffle)
-    loader = DataLoader if image_weights else InfiniteDataLoader  # only DataLoader allows for attribute updates
-    return loader(dataset,
-                  batch_size=batch_size,
-                  shuffle=shuffle and sampler is None,
-                  num_workers=nw,
-                  sampler=sampler,
-                  pin_memory=True,
-                  collate_fn=LoadImagesAndLabels_custom.collate_fn4 if quad else LoadImagesAndLabels_custom.collate_fn), dataset
-
-
-
-
+    return dataset
 
 
 
@@ -301,7 +289,7 @@ class LoadImages:
 
 class LoadImagesAndLabels_custom() :
     # YOLOv5 image/video dataloader, i.e. `python detect.py --source image.jpg/vid.mp4`
-    def __init__(self, image_path, label_path, imgsz=640, stride=32, auto=True):
+    def __init__(self, image_path, imgsz, label_path, stride=32, auto=True, resize=False):
         p = str(Path(image_path).resolve())  # os-agnostic absolute path
         q = str(Path(label_path).resolve())
         if '*' in p:
@@ -330,7 +318,8 @@ class LoadImagesAndLabels_custom() :
 
         labels = [x for x in qfiles if x.split('.')[-1].lower() in LABEL_FORMATS]
 
-        self.img_size = imgsz
+        self.imgsz = imgsz
+        self.resize = resize
         self.stride = stride
         self.files = images + videos
         self.labels = labels
@@ -399,7 +388,7 @@ class LoadImagesAndLabels_custom() :
             else :
                 targets = None                    
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
+        img = letterbox(img0, self.imgsz, stride=self.stride, auto=self.auto, resize=self.resize)[0]
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
