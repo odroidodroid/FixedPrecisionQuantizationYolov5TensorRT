@@ -28,7 +28,6 @@ from threading import Thread
 import numpy as np
 import torch
 from tqdm import tqdm
-from models.yolo import Detect_after_trt
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -51,7 +50,6 @@ from utils.torch_utils import select_device, time_sync
 from utils.quant_utils.quant_module import *
 from utils.quant_utils.quant_utils import *
 from prepare_model import *
-from utils.quant_utils.calibration_method import *
 from torch2trt import torch2trt
 
 def save_one_txt(predn, save_conf, shape, file):
