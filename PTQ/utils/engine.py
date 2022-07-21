@@ -62,13 +62,8 @@ def allocate_buffers(engine):
             outputs.append(HostDeviceMem(host_mem, device_mem))
     return inputs, outputs, bindings, stream
 
-<<<<<<< HEAD
 def build_engine(onnx_model_path, trt_logger, trt_engine_datatype=trt.DataType.FLOAT, calib_dataset=None, batch_size=1, silent=False):
     with trt.Builder(trt_logger) as builder, builder.create_network() as network, trt.OnnxParser() as parser:
-=======
-def build_engine(uff_model_path, trt_logger, trt_engine_datatype=trt.DataType.FLOAT, calib_dataset=None, batch_size=1, silent=False):
-    with trt.Builder(trt_logger) as builder, builder.create_network() as network, trt.UffParser() as parser:
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
         builder.max_workspace_size = 2 << 30
         builder.max_batch_size = batch_size
         if trt_engine_datatype == trt.DataType.HALF:
@@ -80,11 +75,7 @@ def build_engine(uff_model_path, trt_logger, trt_engine_datatype=trt.DataType.FL
 
         parser.register_input(ModelData.INPUT_NAME, ModelData.INPUT_SHAPE)
         parser.register_output("MarkOutput_0")
-<<<<<<< HEAD
         parser.parse(onnx_model_path, network)
-=======
-        parser.parse(uff_model_path, network)
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
 
         if not silent:
             print("Building TensorRT engine. This may take few minutes.")

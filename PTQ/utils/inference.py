@@ -56,7 +56,6 @@ from PIL import Image
 import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
-
 import utils.engine as engine_utils # TRT Engine creation/save/load utils
 import utils.model as model_utils # UFF conversion uttils
 
