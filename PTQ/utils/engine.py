@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 
 from utils.model import ModelData
+from utils import common
 
 # ../../common.py
 sys.path.insert(1,
@@ -45,7 +46,7 @@ def allocate_buffers(engine):
     # it may change in the future, which could brake this sample here
     # when using lower precision [e.g. NMS output would not be np.float32
     # anymore, even though this is assumed in binding_to_type]
-    binding_to_type = {"Input": np.float32, "NMS": np.float32, "NMS_1": np.int32}
+    binding_to_type = {"images": np.float32, "output": np.float32}
 
     for binding in engine:
         size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
@@ -62,25 +63,108 @@ def allocate_buffers(engine):
             outputs.append(HostDeviceMem(host_mem, device_mem))
     return inputs, outputs, bindings, stream
 
-def build_engine(onnx_model_path, trt_logger, trt_engine_datatype=trt.DataType.FLOAT, calib_dataset=None, batch_size=1, silent=False):
-    with trt.Builder(trt_logger) as builder, builder.create_network() as network, trt.OnnxParser() as parser:
-        builder.max_workspace_size = 2 << 30
+
+class ModelData(object):
+    MODEL_PATH = "yolov5l.onnx"
+    INPUT_SHAPE = (3, 640, 640)
+    # We can convert TensorRT data types to numpy types with trt.nptype()
+    DTYPE = trt.float32
+
+
+
+TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
+
+def build_engine_onnx(onnx_model_path):
+    builder = trt.Builder(TRT_LOGGER)
+    network = builder.create_network(common.EXPLICIT_BATCH)
+    config = builder.create_builder_config()
+    parser = trt.OnnxParser(network, TRT_LOGGER)
+
+    config.max_workspace_size = common.GiB(1)
+    # Load the Onnx model and parse it in order to populate the TensorRT network.
+    with open(onnx_model_path, "rb") as model:
+        if not parser.parse(model.read()):
+            print("ERROR: Failed to parse the ONNX file.")
+            for error in range(parser.num_errors):
+                print(parser.get_error(error))
+            return None
+    return builder.build_engine(network, config)
+
+
+
+def get_engine(onnx_file_path, engine_file_path=""):
+    """Attempts to load a serialized engine if available, otherwise builds a new TensorRT engine and saves it."""
+    def build_engine():
+        """Takes an ONNX file and creates a TensorRT engine to run inference with"""
+        with trt.Builder(TRT_LOGGER) as builder, builder.create_network(common.EXPLICIT_BATCH) as network, builder.create_builder_config() as config, trt.OnnxParser(network, TRT_LOGGER) as parser, trt.Runtime(TRT_LOGGER) as runtime:
+            config.max_workspace_size = 1 << 28 # 256MiB
+            builder.max_batch_size = 1
+            # Parse model file
+            if not os.path.exists(onnx_file_path):
+                print('ONNX file {} not found, please run yolov3_to_onnx.py first to generate it.'.format(onnx_file_path))
+                exit(0)
+            print('Loading ONNX file from path {}...'.format(onnx_file_path))
+            with open(onnx_file_path, 'rb') as model:
+                print('Beginning ONNX file parsing')
+                if not parser.parse(model.read()):
+                    print ('ERROR: Failed to parse the ONNX file.')
+                    for error in range(parser.num_errors):
+                        print (parser.get_error(error))
+                    return None
+            # The actual yolov3.onnx is generated with batch size 64. Reshape input to batch size 1
+            network.get_input(0).shape = [1, 3, 608, 608]
+            print('Completed parsing of ONNX file')
+            print('Building an engine from file {}; this may take a while...'.format(onnx_file_path))
+            plan = builder.build_serialized_network(network, config)
+            engine = runtime.deserialize_cuda_engine(plan)
+            print("Completed creating Engine")
+            with open(engine_file_path, "wb") as f:
+                f.write(plan)
+            return engine
+
+    if os.path.exists(engine_file_path):
+        # If a serialized engine exists, use it instead of building an engine.
+        print("Reading engine from file {}".format(engine_file_path))
+        with open(engine_file_path, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
+            return runtime.deserialize_cuda_engine(f.read())
+    else:
+        return build_engine()
+
+
+
+
+def build_engine(onnx_model_path, trt_logger, trt_engine_datatype=trt.DataType.FLOAT, calib_dataset=None, batch_size=1, silent=False, save=''):
+
+    with trt.Builder(trt_logger) as builder, builder.create_network() as network, trt.OnnxParser(network, trt_logger) as parser:
+
+
+        with open(onnx_model_path,'rb') as model :
+            parser.parse(model.read())
+
         builder.max_batch_size = batch_size
+        builder_config = builder.create_builder_config()
+        builder_config.max_workspace_size = 1 << 20
+
         if trt_engine_datatype == trt.DataType.HALF:
             builder.fp16_mode = True
         elif trt_engine_datatype == trt.DataType.INT8:
             builder.fp16_mode = True
             builder.int8_mode = True
-            builder.int8_calibrator = calibrator.SSDEntropyCalibrator(data_dir=calib_dataset, cache_file='INT8CacheFile')
+            builder.int8_calibrator = calibrator.Yolov5EntropyCalibrator(data_dir=calib_dataset, cache_file='INT8CacheFile')
+        
+        if save is not None : 
+            serialized_engine = builder.build_serialized_network(network, builder_config)
+            with open(save + '/yolov5l.engine', 'wb') as f:
+                f.write(serialized_engine)
 
-        parser.register_input(ModelData.INPUT_NAME, ModelData.INPUT_SHAPE)
-        parser.register_output("MarkOutput_0")
-        parser.parse(onnx_model_path, network)
+        #parser.register_input(ModelData.INPUT_NAME, ModelData.INPUT_SHAPE)
+        #parser.register_output("MarkOutput_0")
+        #parser.parse(onnx_model_path, network)
 
         if not silent:
             print("Building TensorRT engine. This may take few minutes.")
 
-        return builder.build_cuda_engine(network)
+        return builder.build_engine(network, builder_config)
 
 def save_engine(engine, engine_dest_path):
     print('Engine:', engine)

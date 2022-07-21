@@ -191,31 +191,31 @@ def run(
         inputs_conversion = []
         input_shapes = ((1, 3, 640, 640), (1, 3, 480, 640), (1, 3, 640, 448), (1, 3, 384, 640), (1, 3, 448, 640), (1, 3, 640, 480))
         for in_sh in input_shapes :
-            inputs_conversion.append(torch.ones(size=in_sh, dtype=torch.float32).cuda())
+            inputs_conversion.append(torch.zeros(size=in_sh, dtype=torch.float32).cuda())
 
-        dynamic = True
+        dynamic = False
         if onnx_export :
             torch.onnx.export(
                 model.cpu() if dynamic else model,  # --dynamic only compatible with cpu
                 inputs_conversion[0].cpu() if dynamic else inputs_conversion[0],
                 'yolov5l.onnx',
                 verbose=False,
-                opset_version=11,
+                opset_version=13,
                 training=torch.onnx.TrainingMode.EVAL,
-                do_constant_folding=True,
+                do_constant_folding=False,
                 input_names=['images'],
                 output_names=['output'],
                 dynamic_axes={
                     'images': {
                         0: 'batch',
-                        2: 'height',
-                        3: 'width'},  # shape(1,3,640,640)
+                        1: 'height',
+                        2: 'width'},  # shape(1,3,640,640)
                     'output': {
                         0: 'batch',
                         1: 'anchors'}  # shape(1,25200,85)
                 } if dynamic else None)
 
-            ### yolo.py -> Detect -> onnx_dynamic = True, export True
+            ### yolo.py -> Detect -> onnx_dynamic = False, export True
 
 
 

@@ -13,11 +13,11 @@ from utils.paths import PATHS
 # This class contains converted (UFF) model metadata
 class ModelData(object):
     # Name of input node
-    INPUT_NAME = "Input"
+    INPUT_NAME = "images"
     # CHW format of model input
     INPUT_SHAPE = (3, 640, 640)
     # Name of output node
-    OUTPUT_NAME = "NMS"
+    OUTPUT_NAME = "output"
 
     @staticmethod
     def get_input_channels():

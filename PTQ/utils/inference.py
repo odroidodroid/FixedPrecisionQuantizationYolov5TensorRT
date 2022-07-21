@@ -75,7 +75,7 @@ TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
 class TRTInference(object):
     """Manages TensorRT objects for model inference."""
-    def __init__(self, trt_engine_path, onnx_model_path, trt_engine_datatype=trt.DataType.FLOAT, calib_dataset=None, batch_size=1):
+    def __init__(self, trt_engine_path, onnx_model_path, trt_engine_datatype=trt.DataType.FLOAT, batch_size=1):
         """Initializes TensorRT objects needed for model inference.
         Args:
             trt_engine_path (str): path where TensorRT engine should be stored
@@ -105,13 +105,7 @@ class TRTInference(object):
             # This function uses supplied .uff file
             # alongside with UffParser to build TensorRT
             # engine. For more details, check implmentation
-            self.trt_engine = engine_utils.build_engine(
-                onnx_model_path, TRT_LOGGER,
-                trt_engine_datatype=trt_engine_datatype,
-                calib_dataset=calib_dataset,
-                batch_size=batch_size)
-            # Save the engine to file
-            engine_utils.save_engine(self.trt_engine, trt_engine_path)
+            self.trt_engine = engine_utils.build_engine_onnx(onnx_model_path)
 
         # If we get here, the file with engine exists, so we can load it
         if not self.trt_engine:

@@ -8,8 +8,9 @@ import cv2
 import numpy as np
 from PIL import Image
 import tensorrt as trt
+from utils.engine import build_engine_onnx, get_engine, build_engine
 from utils.general import non_max_suppression_np
-
+from utils import common
 
 import utils.inference as inference_utils # TRT/TF inference wrappers
 import utils.model as model_utils # UFF conversion
@@ -100,7 +101,7 @@ def parse_commandline_arguments():
         help='desired TensorRT float precision to build an engine with')
     parser.add_argument('-b', '--max_batch_size', type=int, default=1,
         help='max TensorRT engine batch size')
-    parser.add_argument('-w', '--workspace_dir',default='PTQ',
+    parser.add_argument('-w', '--workspace_dir',default='../runs/onnx_trt_detect',
         help='sample workspace directory')
     parser.add_argument('-fc', '--flatten_concat',
         help='path of built FlattenConcat plugin')
@@ -117,6 +118,7 @@ def parse_commandline_arguments():
     parser.add_argument('--data', default='../dataset/coco.yaml')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic_nms', default=False)
+    parser.add_argument('--save_engine', default=False)
     # Parse arguments passed
     args = parser.parse_args()
 
@@ -155,16 +157,16 @@ def main():
 
     # Fetch .uff model path, convert from .pb
     # if needed, using prepare_ssd_model
-    yolo_model_onnx_path = PATHS.get_model_onnx_path(MODEL_NAME)
-    if not os.path.exists(yolo_model_onnx_path):
-        model_utils.prepare_yolo_model(MODEL_NAME)
+    #yolo_model_onnx_path = PATHS.get_model_onnx_path(MODEL_NAME)
+    
+    yolo_model_onnx_path = '/home/youngjin/projects/yolov5l.onnx'
+    engine_path = '/home/youngjin/runs/onnx_trt_detect/models/yolov5/yolov5.trt'
 
     # Set up all TensorRT data structures needed for inference
-    trt_inference_wrapper = inference_utils.TRTInference(
-        args.trt_engine_path, yolo_model_onnx_path,
-        trt_engine_datatype=args.trt_engine_datatype,
-        calib_dataset = args.calib_dataset,
-        batch_size=args.max_batch_size)
+    #engine = build_engine_onnx(onnx_model_path=yolo_model_onnx_path)
+    engine = get_engine(yolo_model_onnx_path, engine_path)
+    inputs, outputs, bindings, stream = common.allocate_buffers(engine)
+    context = engine.create_execution_context()
 
     print("TRT ENGINE PATH", args.trt_engine_path)
 
@@ -177,7 +179,7 @@ def main():
                                                     workers=args.workers, 
                                                     resize=args.resize)
 
-    with open(data, error='ignore') as f :
+    with open(args.data, error='ignore') as f :
         data = yaml.safe_load(f)
     nc = int(data['nc'])
     seen = 0
@@ -193,8 +195,8 @@ def main():
         t2 = time_sync()
         dt[0] += t2 - t1
         # Actually run inference
-        out, keep_count_out = trt_inference_wrapper.infer(img)
-
+        #out, keep_count_out = trt_inference_wrapper.infer(img)
+        out = common.do_inference_v2(context, bindings=bindings, inputs=inputs, outputs=outputs, stream=stream)
         dt[1] += time_sync() - t2
 
         t3 = time_sync()
@@ -204,15 +206,6 @@ def main():
         dt[2] += time_sync() - t3
 
         seen += 1
-
-        # Overlay the bounding boxes on the image
-        # let analyze_prediction() draw them based on model output
-        img_pil = Image.fromarray(img)
-        prediction_fields = len(TRT_PREDICTION_LAYOUT)
-        for det in range(int(keep_count_out[0])):
-            analyze_prediction(out, det * prediction_fields, img_pil)
-        final_img = np.asarray(img_pil)
-
 
 if __name__ == '__main__':
     main()
