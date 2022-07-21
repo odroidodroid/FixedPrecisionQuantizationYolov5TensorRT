@@ -160,10 +160,7 @@ def run(
         bit_width=8,
         mode='symmetric',
         quantized_weight_save_path='',
-<<<<<<< HEAD
         onnx_export=True,
-=======
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
 ):
     # Initialize/load model and set device
     training = model is not None
@@ -187,11 +184,8 @@ def run(
         model = model.type(torch.float32)
         model = model.eval()
 
-<<<<<<< HEAD
 
 
-=======
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
         # create inputs for conversion
         #inputs_conversion = (torch.zeros(size=(1, 3, 640, 640), dtype=torch.float32).cuda(), )
         inputs_conversion = []
@@ -199,7 +193,6 @@ def run(
         for in_sh in input_shapes :
             inputs_conversion.append(torch.ones(size=in_sh, dtype=torch.float32).cuda())
 
-<<<<<<< HEAD
         dynamic = True
         if onnx_export :
             torch.onnx.export(
@@ -228,8 +221,6 @@ def run(
 
             assert('onnx export end')
 
-=======
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
         print('start tensorrt conversion...')
 
         model_trt = torch2trt(model, inputs=[inputs_conversion[0]])
@@ -478,10 +469,7 @@ def parse_opt():
     parser.add_argument('--bit_width',default=8)
     parser.add_argument('--mode',default='symmetric')
     parser.add_argument('--quantized_weight_save_path', default='')
-<<<<<<< HEAD
     parser.add_argument('--onnx_export', default=False)
-=======
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.data = check_yaml(opt.data)  # check YAML
