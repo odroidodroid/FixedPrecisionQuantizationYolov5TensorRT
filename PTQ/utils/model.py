@@ -3,14 +3,7 @@ import sys
 import tarfile
 
 import requests
-<<<<<<< HEAD
 import tensorrt as trt
-=======
-import tensorflow as tf
-import tensorrt as trt
-import graphsurgeon as gs
-import uff
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
 
 from utils.paths import PATHS
 
@@ -22,11 +15,7 @@ class ModelData(object):
     # Name of input node
     INPUT_NAME = "Input"
     # CHW format of model input
-<<<<<<< HEAD
     INPUT_SHAPE = (3, 640, 640)
-=======
-    INPUT_SHAPE = (3, 300, 300)
->>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
     # Name of output node
     OUTPUT_NAME = "NMS"
 
