@@ -8,8 +8,12 @@ import cv2
 import numpy as np
 from PIL import Image
 import tensorrt as trt
+<<<<<<< HEAD
 from utils.general import non_max_suppression_np
 
+=======
+from PTQ.utils.general import non_max_suppression
+>>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
 
 import utils.inference as inference_utils # TRT/TF inference wrappers
 import utils.model as model_utils # UFF conversion
@@ -26,7 +30,11 @@ import pycuda.autoinit
 COCO_LABELS = coco_utils.COCO_CLASSES_LIST
 
 # Model used for inference
+<<<<<<< HEAD
 MODEL_NAME = 'yolov5l'
+=======
+MODEL_NAME = 'ssd_inception_v2_coco_2017_11_17'
+>>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
 
 # Confidence threshold for drawing bounding box
 VISUALIZATION_THRESHOLD = 0.5
@@ -108,7 +116,11 @@ def parse_commandline_arguments():
         help='path to the calibration dataset')
     parser.add_argument('--imgsz', default=(640,640))
     parser.add_argument('--workers', default=8)
+<<<<<<< HEAD
     parser.add_argument('--device', default='0')
+=======
+    parser.add_argument('--device', default='0,1')
+>>>>>>> 851fcd4c2ccdaa9255236d431399fc4b32404c97
     parser.add_argument('--resize', default=True)
     parser.add_argument('--batch_size', default=1)
     parser.add_argument('--stride', default=32)
