@@ -115,10 +115,11 @@ def parse_commandline_arguments():
     parser.add_argument('--stride', default=32)
     parser.add_argument('--conf_thres', default=0.45)
     parser.add_argument('--iou_thres', default=0.25)
-    parser.add_argument('--data', default='../dataset/coco.yaml')
+    parser.add_argument('--data', default='./dataset/coco.yaml')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3')
     parser.add_argument('--agnostic_nms', default=False)
     parser.add_argument('--save_engine', default=False)
+    parser.add_argument('--half', default=False)
     # Parse arguments passed
     args = parser.parse_args()
 
@@ -159,17 +160,32 @@ def main():
     # if needed, using prepare_ssd_model
     #yolo_model_onnx_path = PATHS.get_model_onnx_path(MODEL_NAME)
     
-    yolo_model_onnx_path = '/home/youngjin/projects/yolov5l.onnx'
-    engine_path = '/home/youngjin/runs/onnx_trt_detect/models/yolov5/yolov5.trt'
+    yolo_model_onnx_path = '/home/youngjin/projects/yolov5l_.onnx'
+    #engine_path = '/home/youngjin/runs/onnx_trt_detect/models/yolov5/yolov5.trt'
 
-    # Set up all TensorRT data structures needed for inference
-    #engine = build_engine_onnx(onnx_model_path=yolo_model_onnx_path)
-    engine = get_engine(yolo_model_onnx_path, engine_path)
-    inputs, outputs, bindings, stream = common.allocate_buffers(engine)
+    logger = trt.Logger(trt.Logger.INFO)
+    builder = trt.Builder(logger)
+    profile = builder.create_optimization_profile()
+    profile.set_shape("foo", (3, 300, 300), (3, 640, 640), (3, 800, 800))
+
+    config = builder.create_builder_config()
+    config.add_optimization_profile(profile)
+    config.max_workspace_size = 1 << 30
+
+    flag = (1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    network = builder.create_network(flag)
+    network.add_input("foo", trt.float32, (3, -1, -1))
+    parser = trt.OnnxParser(network, logger)
+
+    if not parser.parse_from_file(str(yolo_model_onnx_path)):
+        raise RuntimeError(f'failed to load ONNX file: {yolo_model_onnx_path}')
+
+
+    if builder.platform_has_fast_fp16 and args.half:
+        config.set_flag(trt.BuilderFlag.FP16)
+
+    engine = builder.build_engine(network, config)
     context = engine.create_execution_context()
-
-    print("TRT ENGINE PATH", args.trt_engine_path)
-
 
     dataset = create_dataloader_custom(image_path=args.input_img_path+'/images',
                                                     label_path=args.input_img_path+'/labels',
@@ -179,33 +195,81 @@ def main():
                                                     workers=args.workers, 
                                                     resize=args.resize)
 
-    with open(args.data, error='ignore') as f :
-        data = yaml.safe_load(f)
-    nc = int(data['nc'])
-    seen = 0
     pbar = tqdm(dataset)
 
-    dt = [0.0, 0.0, 0.0]
-
+    dt = 0.0
+    seen = 0
     for batch_i, (img, im0, targets, paths, shapes, img_id) in enumerate(pbar) :
-        
+
+        img = img / 255
+        img = img.astype(np.float32)
+
+        stream = cuda.Stream()
+        context.set_binding_shape(0, shapes)
+
+        bindings = []
+
+
+        for binding in engine : 
+
+            if engine.binding_is_input(binding) : 
+                shape = context.get_binding_shape(0)
+                size = trt.volume(shape)
+                dtype = trt.nptype(engine.get_binding_dtype(binding))
+
+                host_mem = cuda.pagelocked_empty(size, dtype).reshape(shape)
+                device_mem = cuda.mem_alloc(host_mem.nbytes)
+
+                input = common.HostDeviceMem(host_mem, device_mem)
+            else :
+
+                size = trt.volume(engine.get_binding_shape(binding))
+                dtype = trt.nptype(engine.get_binding_dtype(binding))
+
+                host_mem = cuda.pagelocked_empty(size, dtype)
+                device_mem = cuda.mem_alloc(host_mem.nbytes)
+
+
+                output = common.HostDeviceMem(host_mem, device_mem)
+
+            bindings.append(int(device_mem))
+
+        np.copyto(input.host, img)
+
         t1 = time_sync()
-        img = img.to(device)
-        img /= 255
+        trt_outputs = common.do_inference_v2(context, bindings, input, output, stream)
         t2 = time_sync()
-        dt[0] += t2 - t1
-        # Actually run inference
-        #out, keep_count_out = trt_inference_wrapper.infer(img)
-        out = common.do_inference_v2(context, bindings=bindings, inputs=inputs, outputs=outputs, stream=stream)
-        dt[1] += time_sync() - t2
 
-        t3 = time_sync()
-
-        out = out.cpu().detach().numpy()[-1].reshape((1, -1, nc + 5))
-        out = non_max_suppression_np(out, args.conf_thres, args.iou_thres, args.classes, args.agnostic_nms)
-        dt[2] += time_sync() - t3
-
+        dt += t2 - t1
         seen += 1
+    
+    print('speed : {}'.format((dt/seen) * 1E3))    
+
+
+
+    # for batch_i, (img, im0, targets, paths, shapes, img_id) in enumerate(pbar) :
+        
+    #     t1 = time_sync()
+    #     #img = img.to(device) #numpy array 
+    #     img /= 255
+    #     t2 = time_sync()
+
+    #     # 
+
+    #     dt[0] += t2 - t1
+    #     # Actually run inference
+        
+    #     out = common.do_inference_v2(context, bindings=bindings, inputs=inputs, outputs=outputs, stream=stream)
+        
+    #     dt[1] += time_sync() - t2
+
+    #     t3 = time_sync()
+
+    #     out = out.cpu().detach().numpy()[-1].reshape((1, -1, nc + 5))
+    #     out = non_max_suppression_np(out, args.conf_thres, args.iou_thres, args.classes, args.agnostic_nms)
+    #     dt[2] += time_sync() - t3
+
+    #     seen += 1
 
 if __name__ == '__main__':
     main()
