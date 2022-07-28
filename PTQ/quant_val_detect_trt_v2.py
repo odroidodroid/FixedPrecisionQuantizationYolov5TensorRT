@@ -22,7 +22,7 @@ from utils.general import *
 from utils.torch_utils import select_device, time_sync
 import pycuda.driver as cuda
 import pycuda.autoinit
-
+from utils.plots import *
 # COCO label list
 COCO_LABELS = coco_utils.COCO_CLASSES_LIST
 
@@ -49,6 +49,92 @@ TRT_PREDICTION_LAYOUT = {
     "xmax": 5,
     "ymax": 6
 }
+
+
+
+def process_batch(detections, labels, iouv):
+    """
+    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
+    Arguments:
+        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
+        labels (Array[M, 5]), class, x1, y1, x2, y2
+    Returns:
+        correct (Array[N, 10]), for 10 IoU levels
+    """
+    correct = torch.zeros(detections.shape[0], iouv.shape[0], dtype=torch.bool, device=iouv.device)
+    iou = box_iou(labels[:, 1:], detections[:, :4])
+    x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    if x[0].shape[0]:
+        matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
+        if x[0].shape[0] > 1:
+            matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            # matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+        matches = torch.from_numpy(matches).to(iouv.device)
+        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
+    return correct
+
+
+def process_batch_np(detections, labels, iouv):
+    """
+    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
+    Arguments:
+        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
+        labels (Array[M, 5]), class, x1, y1, x2, y2
+    Returns:
+        correct (Array[N, 10]), for 10 IoU levels
+    """
+    correct = np.zeros(detections.shape[0], iouv.shape[0], dtype=np.bool, device=iouv.device)
+    iou = box_iou(labels[:, 1:], detections[:, :4])
+    x = np.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
+    if x[0].shape[0]:
+        matches = np.concatenate((np.stack(x, 1), iou[x[0], x[1]][:, None]), 1)  # [label, detection, iou]
+        if x[0].shape[0] > 1:
+            matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
+            # matches = matches[matches[:, 2].argsort()[::-1]]
+            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
+        matches = torch.from_numpy(matches).to(iouv.device)
+        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
+    return correct
+
+
+
+
+def save_one_txt(predn, save_conf, shape, file):
+    # Save one txt result
+    gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
+    for *xyxy, conf, cls in predn.tolist():
+        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+        with open(file, 'a') as f:
+            f.write(('%g ' * len(line)).rstrip() % line + '\n')
+
+
+
+def save_one_image(predn, names, save_conf, shape, file, img_id, im0) :
+
+    #im0 = cv2.imread('/home/youngjin/datasets/coco/val/images/' + img_id + '.jpg')
+    annotator = Annotator(im0, line_width=3, example=str(names))
+    for *xyxy, conf, cls in predn.tolist() :
+        c = int(cls)
+        label = names[c]
+        annotator.box_label(xyxy, label, color=(c, True))
+    im0 = annotator.result()
+    cv2.imwrite(file, im0)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def fetch_prediction_field(field_name, detection_out, pred_start_idx):
@@ -120,6 +206,13 @@ def parse_commandline_arguments():
     parser.add_argument('--agnostic_nms', default=False)
     parser.add_argument('--save_engine', default=False)
     parser.add_argument('--half', default=False)
+    parser.add_argument('--evaluate', default=True)
+    parser.add_argument('--save_img', default=True)
+    parser.add_argument('--save_txt', default=True)
+    parser.add_argument('--save_conf', default=False)
+    parser.add_argument('--save_dir', default='/home/youngjin/projects/runs/onnx_trt_detect/')
+
+
     # Parse arguments passed
     args = parser.parse_args()
 
@@ -155,6 +248,14 @@ def main():
     args = parse_commandline_arguments()
 
     device = select_device(args.device, batch_size=args.batch_size)
+
+
+    # Directories
+    save_dir = increment_path(Path(args.save_dir) / 'exp', exist_ok=False)  # increment run
+    (save_dir / 'labels' if args.save_txt else args.save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    (save_dir / 'images' if args.save_txt else args.save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+
+
 
     # Fetch .uff model path, convert from .pb
     # if needed, using prepare_ssd_model
@@ -195,12 +296,17 @@ def main():
                                                     workers=args.workers, 
                                                     resize=args.resize)
 
+    data = check_dataset(args.data)
+    names = data['names']
+    nc = data['nc']
+    eps = 1e-16
     pbar = tqdm(dataset)
-
-    dt = 0.0
+    iouv = torch.linspace(0.5, 0.95, 10, device=device) 
+    dt = [0.0, 0.0, 0.0]
+    stats = []
     seen = 0
     for batch_i, (img, im0, targets, paths, shapes, img_id) in enumerate(pbar) :
-
+        t0 = time_sync()
         img = img / 255
         img = img.astype(np.float32)
 
@@ -235,13 +341,69 @@ def main():
             bindings.append(int(device_mem))
 
         np.copyto(input.host, img)
-
         t1 = time_sync()
-        trt_outputs = common.do_inference_v2(context, bindings, input, output, stream)
-        t2 = time_sync()
+        dt[0] += t1 - t0
 
-        dt += t2 - t1
+        trt_outputs = common.do_inference_v2(context, bindings, input, output, stream)
+
+        dt[1] += time_sync() - t1
+
+        t3 = time_sync()
+        #np_outputs = non_max_suppression_np(trt_outputs, args.conf_thres, args.iou_thres, args.agnostic_nms)
+        trt_outputs = trt_outputs.reshape((1, -1, nc + 5))
+        outputs = non_max_suppression_np(trt_outputs, args.conf_thres, args.iou_thres, args.agnostic_nms)
+        dt[2] += time_sync() - t3
+
         seen += 1
+
+
+        if args.evaluate and (targets is not None):
+            for si, pred in enumerate(outputs) : 
+                #pred = pred.view(-1, 6)
+                cat_ids, bboxes = coco91_to_coco80_class_np(targets)
+                nl, npr = cat_ids.shape[0], pred.shape[0]
+
+                if npr == 0 :
+                    if nl : 
+                        stats.append((correct, *np.zeros((3, 0), device=device)))
+                    continue
+                
+                predn = pred.clone()
+                predn[:, :4] = scale_coords(img.shape[2:], predn[:, :4], im0.shape)
+
+                if nl : 
+                    bboxes = xywh2xyxy_custom2(bboxes)
+                    #labelsn = torch.cat((cat_ids, bboxes), 1)
+                    labelsn = np.concatenate((cat_ids, bboxes), 1)
+                    correct = process_batch_np(predn, labelsn, iouv)
+
+                stats.append(correct, pred[:, 4], pred[:, 5], cat_ids[:, 0])
+
+                if args.save_txt : 
+                    save_one_txt(predn, args.save_conf, shapes, file=args.save_dir / 'labels' / (img_id + '.txt'))
+
+                if args.save_img :
+                    save_one_image(predn, names, args.save_conf, shapes, 
+                    file=args.save_dir / 'images' / (img_id + '.jpg'), img_id=img_id,im0=im0)
+
+
+    
+    if args.evaluate :
+        stats = [np.concatenate(x, 0) for x in zip(*stats)]
+        tp, _, _, target_cls = stats
+
+        n_l = target_cls.shape[0]
+        fpc = (1-tp).cumsum()[-1]
+        tpc = tp.cumsum()[-1]
+
+        recall = tpc / (n_l + eps)
+        precision = tpc / (tpc + fpc)
+
+        print('cumsum recall : {} , precision : {}'.format(recall, precision))
+
+
+            
+
     
     print('speed : {}'.format((dt/seen) * 1E3))    
 
