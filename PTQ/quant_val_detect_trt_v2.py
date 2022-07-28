@@ -326,7 +326,6 @@ def main():
         dt[1] += time_sync() - t1
 
         t3 = time_sync()
-        #np_outputs = non_max_suppression_np(trt_outputs, args.conf_thres, args.iou_thres, args.agnostic_nms)
         trt_outputs = trt_outputs.reshape((1, -1, nc + 5))
         outputs = non_max_suppression_np(trt_outputs, args.conf_thres, args.iou_thres, args.agnostic_nms)
         dt[2] += time_sync() - t3
@@ -337,7 +336,7 @@ def main():
         if args.evaluate and (targets is not None):
             targets = torch.tensor(targets)
             for si, pred in enumerate(outputs) : 
-                pred = torch.tensor(pred)
+                pred = torch.tensor(pred).to(device=device)
                 pred = pred.view(-1, 6)
                 cat_ids, bboxes = coco91_to_coco80_class(targets)
                 nl, npr = cat_ids.shape[0], pred.shape[0]
@@ -352,22 +351,22 @@ def main():
 
                 if nl : 
                     bboxes = xywh2xyxy_custom2(bboxes)
-                    labelsn = torch.cat((cat_ids, bboxes), 1).to(device=device)
+                    labelsn = torch.cat((cat_ids, bboxes), 1)
                     correct = process_batch(predn, labelsn, iouv)
 
-                stats.append(correct, pred[:, 4], pred[:, 5], cat_ids[:, 0])
+                stats.append((correct, pred[:, 4], pred[:, 5], cat_ids[:, 0]))
 
                 if args.save_txt : 
-                    save_one_txt(predn, args.save_conf, shapes, file=args.save_dir / 'labels' / (img_id + '.txt'))
+                    save_one_txt(predn, args.save_conf, shapes, file=args.save_dir + '/labels/' + img_id + '.txt')
 
                 if args.save_img :
                     save_one_image(predn, names, args.save_conf, shapes, 
-                    file=args.save_dir / 'images' / (img_id + '.jpg'), img_id=img_id,im0=im0)
+                    file=args.save_dir + '/images/' + img_id + '.jpg', img_id=img_id, im0=im0)
 
 
     
     if args.evaluate :
-        stats = [np.concatenate(x, 0) for x in zip(*stats)]
+        stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]
         tp, _, _, target_cls = stats
 
         n_l = target_cls.shape[0]
