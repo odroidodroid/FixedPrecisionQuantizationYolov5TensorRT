@@ -273,6 +273,10 @@ def box_iou(box1, box2):
     return inter / (box_area(box1.T)[:, None] + box_area(box2.T) - inter)
 
 
+
+
+
+
 def bbox_ioa(box1, box2, eps=1E-7):
     """ Returns the intersection over box2 area given box1, box2. Boxes are x1y1x2y2
     box1:       np.array of shape(4)

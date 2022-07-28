@@ -23,6 +23,7 @@ from utils.torch_utils import select_device, time_sync
 import pycuda.driver as cuda
 import pycuda.autoinit
 from utils.plots import *
+from utils.metrics import box_iou
 # COCO label list
 COCO_LABELS = coco_utils.COCO_CLASSES_LIST
 
@@ -66,30 +67,6 @@ def process_batch(detections, labels, iouv):
     x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
     if x[0].shape[0]:
         matches = torch.cat((torch.stack(x, 1), iou[x[0], x[1]][:, None]), 1).cpu().numpy()  # [label, detection, iou]
-        if x[0].shape[0] > 1:
-            matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
-            # matches = matches[matches[:, 2].argsort()[::-1]]
-            matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-        matches = torch.from_numpy(matches).to(iouv.device)
-        correct[matches[:, 1].long()] = matches[:, 2:3] >= iouv
-    return correct
-
-
-def process_batch_np(detections, labels, iouv):
-    """
-    Return correct predictions matrix. Both sets of boxes are in (x1, y1, x2, y2) format.
-    Arguments:
-        detections (Array[N, 6]), x1, y1, x2, y2, conf, class
-        labels (Array[M, 5]), class, x1, y1, x2, y2
-    Returns:
-        correct (Array[N, 10]), for 10 IoU levels
-    """
-    correct = np.zeros(detections.shape[0], iouv.shape[0], dtype=np.bool, device=iouv.device)
-    iou = box_iou(labels[:, 1:], detections[:, :4])
-    x = np.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))  # IoU above threshold and classes match
-    if x[0].shape[0]:
-        matches = np.concatenate((np.stack(x, 1), iou[x[0], x[1]][:, None]), 1)  # [label, detection, iou]
         if x[0].shape[0] > 1:
             matches = matches[matches[:, 2].argsort()[::-1]]
             matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
@@ -358,24 +335,25 @@ def main():
 
 
         if args.evaluate and (targets is not None):
+            targets = torch.tensor(targets)
             for si, pred in enumerate(outputs) : 
-                #pred = pred.view(-1, 6)
-                cat_ids, bboxes = coco91_to_coco80_class_np(targets)
+                pred = torch.tensor(pred)
+                pred = pred.view(-1, 6)
+                cat_ids, bboxes = coco91_to_coco80_class(targets)
                 nl, npr = cat_ids.shape[0], pred.shape[0]
 
                 if npr == 0 :
                     if nl : 
-                        stats.append((correct, *np.zeros((3, 0), device=device)))
+                        stats.append((correct, *torch.zeros((3, 0), device=device)))
                     continue
                 
                 predn = pred.clone()
-                predn[:, :4] = scale_coords(img.shape[2:], predn[:, :4], im0.shape)
+                predn[:, :4] = scale_coords(img.shape[1:], predn[:, :4], im0.shape)
 
                 if nl : 
                     bboxes = xywh2xyxy_custom2(bboxes)
-                    #labelsn = torch.cat((cat_ids, bboxes), 1)
-                    labelsn = np.concatenate((cat_ids, bboxes), 1)
-                    correct = process_batch_np(predn, labelsn, iouv)
+                    labelsn = torch.cat((cat_ids, bboxes), 1).to(device=device)
+                    correct = process_batch(predn, labelsn, iouv)
 
                 stats.append(correct, pred[:, 4], pred[:, 5], cat_ids[:, 0])
 

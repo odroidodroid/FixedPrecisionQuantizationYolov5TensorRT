@@ -258,7 +258,7 @@ def run(
         seen += 1
         if evaluate and not (targets is None): 
             for si, pred in enumerate(out):
-                pred = pred.view(-1, 6)
+                pred = pred[-1].view(-1, 6)
                 cat_ids, bboxes = coco91_to_coco80_class(targets) 
                 nl, npr = cat_ids.shape[0], pred.shape[0]  # number of labels, predictions
                 correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
@@ -390,7 +390,7 @@ def parse_opt():
     parser.add_argument('--source', default='/home/youngjin/datasets/coco/val')
     parser.add_argument('--hyp', default='../dataset/hyps/hyp.scratch-low.yaml')
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
-    parser.add_argument('--evaluate', default=False)
+    parser.add_argument('--evaluate', default=True)
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+',type=int, default=[640], help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
