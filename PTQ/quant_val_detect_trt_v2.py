@@ -244,7 +244,7 @@ def main():
     logger = trt.Logger(trt.Logger.INFO)
     builder = trt.Builder(logger)
     profile = builder.create_optimization_profile()
-    profile.set_shape("foo", (3, 300, 300), (3, 640, 640), (3, 800, 800))
+    profile.set_shape("input", (3, 300, 300), (3, 640, 640), (3, 800, 800))
 
     config = builder.create_builder_config()
     config.add_optimization_profile(profile)
@@ -252,7 +252,7 @@ def main():
 
     flag = (1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     network = builder.create_network(flag)
-    network.add_input("foo", trt.float32, (3, -1, -1))
+    network.add_input("input", trt.float32, (3, -1, -1))
     parser = trt.OnnxParser(network, logger)
 
     if not parser.parse_from_file(str(yolo_model_onnx_path)):
@@ -279,6 +279,8 @@ def main():
     eps = 1e-16
     pbar = tqdm(dataset)
     iouv = torch.linspace(0.5, 0.95, 10, device=device) 
+    niou = iouv.numel()
+
     dt = [0.0, 0.0, 0.0]
     stats = []
     seen = 0
@@ -288,14 +290,13 @@ def main():
         img = img.astype(np.float32)
 
         stream = cuda.Stream()
-        context.set_binding_shape(0, shapes)
-
         bindings = []
 
 
         for binding in engine : 
 
             if engine.binding_is_input(binding) : 
+                context.set_binding_shape(0, shapes)
                 shape = context.get_binding_shape(0)
                 size = trt.volume(shape)
                 dtype = trt.nptype(engine.get_binding_dtype(binding))
@@ -340,6 +341,7 @@ def main():
                 pred = pred.view(-1, 6)
                 cat_ids, bboxes = coco91_to_coco80_class(targets)
                 nl, npr = cat_ids.shape[0], pred.shape[0]
+                correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)
 
                 if npr == 0 :
                     if nl : 
@@ -357,11 +359,11 @@ def main():
                 stats.append((correct, pred[:, 4], pred[:, 5], cat_ids[:, 0]))
 
                 if args.save_txt : 
-                    save_one_txt(predn, args.save_conf, shapes, file=args.save_dir + '/labels/' + img_id + '.txt')
+                    save_one_txt(predn, args.save_conf, shapes, file= save_dir / 'labels' / str(img_id + '.txt'))
 
                 if args.save_img :
                     save_one_image(predn, names, args.save_conf, shapes, 
-                    file=args.save_dir + '/images/' + img_id + '.jpg', img_id=img_id, im0=im0)
+                    file= save_dir / 'images' / str(img_id + '.jpg'), img_id=img_id, im0=im0)
 
 
     
@@ -382,7 +384,7 @@ def main():
             
 
     
-    print('speed : {}'.format((dt/seen) * 1E3))    
+    print('speed : {}'.format((dt[1]/seen) * 1E3))    
 
 
 
