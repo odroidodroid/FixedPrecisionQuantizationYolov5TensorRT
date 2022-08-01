@@ -321,10 +321,8 @@ def main():
         np.copyto(input.host, img)
         t1 = time_sync()
         dt[0] += t1 - t0
-
-        trt_outputs = common.do_inference_v2(context, bindings, input, output, stream)
-
-        dt[1] += time_sync() - t1
+        
+        trt_outputs, dt[1] = common.do_inference_v2(context, bindings, input, output, stream)
 
         t3 = time_sync()
         trt_outputs = trt_outputs.reshape((1, -1, nc + 5))

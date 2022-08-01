@@ -159,17 +159,19 @@ def do_inference(context, bindings, inputs, outputs, stream, batch_size=1):
 
 # This function is generalized for multiple inputs/outputs for full dimension networks.
 # inputs and outputs are expected to be lists of HostDeviceMem objects.
-def do_inference_v2(context, binding, input, output, stream):
+def do_inference_v2(context, binding, input, output, stream, dt):
     # Transfer input data to the GPU.
     cuda.memcpy_htod_async(input.device, input.host, stream)
     # Run inference.
+    t1 = time_sync()
     context.execute_async_v2(bindings=binding, stream_handle=stream.handle)
+    dt += time_sync() - t1
     # Transfer predictions back from the GPU.
     cuda.memcpy_dtoh_async(output.host, output.device, stream)
     # Synchronize the stream
     stream.synchronize()
     # Return only the host outputs.
-    return output.host
+    return output.host, dt
 
 def do_inference_v2_custom(context, binding, device_input, img, device_output, output,stream):
     # Transfer input data to the GPU.
