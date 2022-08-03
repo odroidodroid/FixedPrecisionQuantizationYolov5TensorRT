@@ -442,7 +442,7 @@ def parse_opt():
     parser.add_argument('--source', default='/home/youngjin/datasets/coco/val')
     parser.add_argument('--hyp', default='../dataset/hyps/hyp.scratch-low.yaml')
     parser.add_argument('--evaluate', default=False)
-    parser.add_argument('--resize', default=True)
+    parser.add_argument('--resize', default=False)
     parser.add_argument('--batch-size', type=int, default=2, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+',type=int, default=(640,640), help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
@@ -469,7 +469,7 @@ def parse_opt():
     parser.add_argument('--bit_width',default=8)
     parser.add_argument('--mode',default='symmetric')
     parser.add_argument('--quantized_weight_save_path', default='')
-    parser.add_argument('--onnx_export', default=False)
+    parser.add_argument('--onnx_export', default=True)
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     opt.data = check_yaml(opt.data)  # check YAML

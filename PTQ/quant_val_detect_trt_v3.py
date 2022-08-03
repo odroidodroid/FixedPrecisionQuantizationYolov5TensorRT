@@ -24,6 +24,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 from utils.plots import *
 from utils.metrics import box_iou
+from utils.calibrator import Yolov5EntropyCalibrator
 # COCO label list
 COCO_LABELS = coco_utils.COCO_CLASSES_LIST
 
@@ -160,7 +161,7 @@ def parse_commandline_arguments():
     parser = argparse.ArgumentParser(description='Run object detection inference on input image.')
     parser.add_argument('--input_img_path', metavar='INPUT_IMG_PATH',default='/home/youngjin/datasets/coco/val',
         help='an image file to run inference on')
-    parser.add_argument('-p', '--precision', type=int, choices=[32, 16, 8], default=32,
+    parser.add_argument('-p', '--precision', type=int, choices=[32, 16, 8], default=8,
         help='desired TensorRT float precision to build an engine with')
     parser.add_argument('-b', '--max_batch_size', type=int, default=1,
         help='max TensorRT engine batch size')
@@ -168,7 +169,9 @@ def parse_commandline_arguments():
         help='sample workspace directory')
     parser.add_argument('-fc', '--flatten_concat',
         help='path of built FlattenConcat plugin')
-    parser.add_argument('-d', '--calib_dataset', default='/home/youngjin/datasets/coco/val/images',
+    parser.add_argument('-d', '--calib_dataset_path', default='/home/youngjin/datasets/coco/train/images',
+        help='path to the calibration dataset')
+    parser.add_argument('-c', '--calib_cache_path', default='/home/youngjin/projects/runs/calib_cache/coco_calib_cache.cache',
         help='path to the calibration dataset')
     parser.add_argument('--imgsz', default=(640,640))
     parser.add_argument('--workers', default=8)
@@ -183,6 +186,7 @@ def parse_commandline_arguments():
     parser.add_argument('--agnostic_nms', default=False)
     parser.add_argument('--save_engine', default=False)
     parser.add_argument('--half', default=False)
+    parser.add_argument('--int8', default=True)
     parser.add_argument('--evaluate', default=True)
     parser.add_argument('--save_img', default=True)
     parser.add_argument('--save_txt', default=True)
@@ -232,35 +236,33 @@ def main():
     (save_dir / 'labels' if args.save_txt else args.save_dir).mkdir(parents=True, exist_ok=True)  # make dir
     (save_dir / 'images' if args.save_txt else args.save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
-
-
-    # Fetch .uff model path, convert from .pb
-    # if needed, using prepare_ssd_model
-    #yolo_model_onnx_path = PATHS.get_model_onnx_path(MODEL_NAME)
-    
-    yolo_model_onnx_path = '/home/youngjin/projects/yolov5l_.onnx'
+    yolo_model_onnx_path = '/home/youngjin/projects/yolov5l.onnx'
     #engine_path = '/home/youngjin/runs/onnx_trt_detect/models/yolov5/yolov5.trt'
 
     logger = trt.Logger(trt.Logger.INFO)
     builder = trt.Builder(logger)
     profile = builder.create_optimization_profile()
-    profile.set_shape("input", (3, 300, 300), (3, 640, 640), (3, 800, 800))
+    profile.set_shape("images", (1, 3, 640, 640), (1, 3, 640, 640), (1, 3, 640, 640))
 
     config = builder.create_builder_config()
     config.add_optimization_profile(profile)
-    config.max_workspace_size = 1 << 30
-
+    config.max_workspace_size = common.GiB(10)
     flag = (1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     network = builder.create_network(flag)
-    network.add_input("input", trt.float32, (3, -1, -1))
     parser = trt.OnnxParser(network, logger)
 
     if not parser.parse_from_file(str(yolo_model_onnx_path)):
         raise RuntimeError(f'failed to load ONNX file: {yolo_model_onnx_path}')
 
-
+    # fp16 mode
     if builder.platform_has_fast_fp16 and args.half:
         config.set_flag(trt.BuilderFlag.FP16)
+
+    # int8 mode 
+    elif builder.platform_has_fast_int8 and args.int8 :
+        config.set_flag(trt.BuilderFlag.INT8)
+        calib = Yolov5EntropyCalibrator(args.calib_dataset_path, args.calib_cache_path)
+        config.int8_calibrator = calib
 
     engine = builder.build_engine(network, config)
     context = engine.create_execution_context()
