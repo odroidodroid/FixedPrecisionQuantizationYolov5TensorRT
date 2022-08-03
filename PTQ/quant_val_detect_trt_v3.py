@@ -250,7 +250,7 @@ def main():
 
     config = builder.create_builder_config()
     config.add_optimization_profile(profile)
-    config.max_workspace_size = common.GiB(10)
+    config.max_workspace_size = common.GiB(1)
     flag = (1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     network = builder.create_network(flag)
     parser = trt.OnnxParser(network, logger)
