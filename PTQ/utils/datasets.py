@@ -388,8 +388,8 @@ class LoadImagesAndLabels_custom() :
             else :
                 targets = None                    
         # Padded resize
-        img = letterbox(img0, self.imgsz, stride=self.stride, auto=self.auto, resize=self.resize)[0]
-
+        #img = letterbox(img0, self.imgsz, stride=self.stride, auto=self.auto, resize=self.resize)[0]
+        img = cv2.resize(src=img0, dsize=(self.imgsz[0], self.imgsz[1]), interpolation=cv2.INTER_LINEAR)
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)

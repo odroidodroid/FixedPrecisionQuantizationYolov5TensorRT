@@ -9,7 +9,7 @@ import numpy as np
 # For reading size information from batches
 import struct
 
-IMG_H, IMG_W, IMG_CH = 640, 640, 3
+# IMG_H, IMG_W, IMG_CH = 768, 768, 3
 
 class SSDEntropyCalibrator(trt.IInt8EntropyCalibrator2):
     def __init__(self, data_dir, cache_file):
@@ -98,14 +98,14 @@ class SSDEntropyCalibrator(trt.IInt8EntropyCalibrator2):
 
 
 class Yolov5EntropyCalibrator(trt.IInt8EntropyCalibrator2):
-    def __init__(self, data_dir, cache_file):
+    def __init__(self, data_dir, cache_file, shape):
         # Whenever you specify a custom constructor for a TensorRT class,
         # you MUST call the constructor of the parent explicitly.
         trt.IInt8EntropyCalibrator2.__init__(self)
-
-        self.num_calib_imgs = 150 # the number of images from the dataset to use for calibration
-        self.batch_size = 1
-        self.batch_shape = (self.batch_size, IMG_CH, IMG_H, IMG_W)
+        self.batch_size, self.IMG_CH, self.IMG_H, self.IMG_W = shape
+        self.num_calib_imgs = 100 # the number of images from the dataset to use for calibration
+        
+        self.batch_shape = (self.batch_size, self.IMG_CH, self.IMG_H, self.IMG_W)
         self.cache_file = cache_file
 
         calib_imgs = [os.path.join(data_dir, f) for f in os.listdir(data_dir)]
@@ -131,7 +131,7 @@ class Yolov5EntropyCalibrator(trt.IInt8EntropyCalibrator2):
         if self.counter % 10 == 0:
             print('Running Batch:', self.counter)
 
-        batch_imgs = np.zeros((self.batch_size, IMG_H*IMG_W*IMG_CH))
+        batch_imgs = np.zeros((self.batch_size, self.IMG_H*self.IMG_W*self.IMG_CH))
         for i in range(self.batch_size):
 
             image = Image.open(self.calib_imgs[self.counter + i])
@@ -141,9 +141,7 @@ class Yolov5EntropyCalibrator(trt.IInt8EntropyCalibrator2):
             # an image that is not 300x300, the network output may differ
             # from the one output by Tensorflow
             image_resized = image.resize(
-                size=(IMG_H, IMG_W),
-                resample=Image.BILINEAR
-            )
+                size=(self.IMG_H, self.IMG_W))
             img_np = self._load_image_into_numpy_array(image_resized)
             # HWC -> CHW
             img_np = img_np.transpose((2, 0, 1))

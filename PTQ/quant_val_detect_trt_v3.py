@@ -241,8 +241,12 @@ def main():
 
     logger = trt.Logger(trt.Logger.INFO)
     builder = trt.Builder(logger)
+
+    # set shape
+    profile_shape = (1, 3, args.imgsz[0], args.imgsz[1])
+
     profile = builder.create_optimization_profile()
-    profile.set_shape("images", (1, 3, 640, 640), (1, 3, 640, 640), (1, 3, 640, 640))
+    profile.set_shape("images", profile_shape, profile_shape, profile_shape)
 
     config = builder.create_builder_config()
     config.add_optimization_profile(profile)
@@ -261,7 +265,8 @@ def main():
     # int8 mode 
     elif builder.platform_has_fast_int8 and args.int8 :
         config.set_flag(trt.BuilderFlag.INT8)
-        calib = Yolov5EntropyCalibrator(args.calib_dataset_path, args.calib_cache_path)
+
+        calib = Yolov5EntropyCalibrator(args.calib_dataset_path, args.calib_cache_path, profile_shape)
         config.int8_calibrator = calib
 
     engine = builder.build_engine(network, config)
