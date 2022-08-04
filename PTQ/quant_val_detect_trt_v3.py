@@ -303,7 +303,7 @@ def main():
         for binding in engine : 
 
             if engine.binding_is_input(binding) : 
-                context.set_binding_shape(0, shapes)
+                context.set_binding_shape(0, profile_shape)
                 shape = context.get_binding_shape(0)
                 size = trt.volume(shape)
                 dtype = trt.nptype(engine.get_binding_dtype(binding))
